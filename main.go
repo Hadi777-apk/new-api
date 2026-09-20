@@ -150,6 +150,11 @@ func main() {
 	// switch are enforced inside the runner and each handler's Enabled().
 	controller.RegisterScheduledSystemTasks()
 	service.StartSystemTaskRunner()
+	if err := controller.StartDrawingWorker(); err != nil {
+		common.FatalLog("failed to start drawing queue: " + err.Error())
+		return
+	}
+	controller.StartAPIImageWorker()
 
 	if os.Getenv("BATCH_UPDATE_ENABLED") == "true" {
 		common.BatchUpdateEnabled = true
@@ -323,6 +328,11 @@ func InitResources() error {
 		}
 	}
 	model.InitOptionMap()
+	if common.IsMasterNode {
+		if err := model.InitImageUpscaleWorkerToken(); err != nil {
+			common.SysError(err.Error())
+		}
+	}
 
 	// 清理旧的磁盘缓存文件
 	common.CleanupOldCacheFiles()

@@ -15,6 +15,12 @@ func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.DecompressRequestMiddleware())
 	router.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	router.Use(middleware.StatsMiddleware())
+	upscaleWorker := router.Group("/internal/image-upscale", controller.ImageUpscaleWorkerAuth)
+	upscaleWorker.POST("/heartbeat", controller.ImageUpscaleWorkerHeartbeat)
+	upscaleWorker.POST("/claim", controller.ClaimImageUpscaleJob)
+	upscaleWorker.GET("/:id/input", controller.ImageUpscaleJobIO)
+	upscaleWorker.POST("/:id/result", controller.ImageUpscaleJobIO)
+	upscaleWorker.POST("/:id/fail", controller.ImageUpscaleJobIO)
 	// https://platform.openai.com/docs/api-reference/introduction
 	modelsRouter := router.Group("/v1/models")
 	modelsRouter.Use(middleware.RouteTag("relay"))
@@ -59,6 +65,22 @@ func SetRelayRouter(router *gin.Engine) {
 		})
 	}
 
+	drawingRouter := router.Group("/pg/drawing")
+	drawingRouter.Use(middleware.UserAuth())
+	{
+		drawingRouter.GET("/settings", controller.DrawingSettings)
+		drawingRouter.GET("/batches", controller.ListDrawingBatches)
+		drawingRouter.POST("/batches", controller.CreateDrawingBatch)
+		drawingRouter.GET("/templates", controller.ListDrawingTemplates)
+		drawingRouter.POST("/templates", controller.SaveDrawingTemplate)
+		drawingRouter.PUT("/templates/:id", controller.SaveDrawingTemplate)
+		drawingRouter.DELETE("/templates/:id", controller.DeleteDrawingTemplate)
+		drawingRouter.GET("/batches/:id/download", controller.DownloadDrawingBatch)
+		drawingRouter.GET("/images/:id", controller.DrawingImage)
+		drawingRouter.POST("/images/:id/retry", controller.RetryDrawing)
+		drawingRouter.POST("/images/:id/recover", controller.RecoverDrawing)
+	}
+
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))
 	playgroundRouter.Use(middleware.SystemPerformanceCheck())
@@ -73,6 +95,14 @@ func SetRelayRouter(router *gin.Engine) {
 	relayV1Router.Use(middleware.SystemPerformanceCheck())
 	relayV1Router.Use(middleware.TokenAuth())
 	relayV1Router.Use(middleware.ModelRequestRateLimit())
+	// Durable image tasks use normal API-key auth at submission and isolated
+	// background relay execution. Polling also works after quota is exhausted.
+	imageTasks := router.Group("/v1/images/tasks")
+	imageTasks.Use(middleware.RouteTag("relay"))
+	imageTasks.POST("", middleware.SystemPerformanceCheck(), middleware.TokenAuth(), controller.CreateAPIImageTask)
+	imageTasks.GET("/:id", middleware.TokenAuthReadOnly(), controller.GetAPIImageTask)
+	imageTasks.GET("/:id/result", middleware.TokenAuthReadOnly(), controller.GetAPIImageTask)
+	imageTasks.GET("/by-submission/:submission", middleware.TokenAuthReadOnly(), controller.GetAPIImageTask)
 	{
 		// WebSocket 路由（统一到 Relay）
 		wsRouter := relayV1Router.Group("")

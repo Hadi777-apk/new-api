@@ -50,9 +50,33 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	}
 
 	updateOpenAIImageCount(info, gjson.GetBytes(responseBody, "data.#").Int())
+	clientBody := responseBody
+	if info != nil && service.LocalImageUpscaleTarget(info.OriginModelName, info.UpstreamModelName) != 0 {
+		target := service.LocalImageUpscaleTarget(info.OriginModelName, info.UpstreamModelName)
+		clientBody, err = service.UpscaleImageResponse(c.Request.Context(), clientBody, target)
+		if err != nil {
+			c.Header("x-should-retry", "false")
+			return nil, types.NewOpenAIError(err, types.ErrorCode("image_upscale_failed"), http.StatusFailedDependency, types.ErrOptionWithSkipRetry())
+		}
+	}
+	if !c.GetBool(service.DrawingResponseSpoolContextKey) {
+		clientBody, err = service.EnsureImageBase64Response(c.Request.Context(), clientBody)
+		if err != nil {
+			c.Header("x-should-retry", "false")
+			return nil, types.NewOpenAIError(err, types.ErrorCode("image_delivery_failed"), http.StatusFailedDependency, types.ErrOptionWithSkipRetry())
+		}
+	}
 
 	// 写入新的 response body
-	service.IOCopyBytesGracefully(c, resp, responseBody)
+	for _, key := range []string{"ETag", "Content-MD5", "Digest", "Content-Digest", "Repr-Digest"} {
+		resp.Header.Del(key)
+	}
+	clientBody = service.NormalizeImageJSONResponse(c.Request.Context(), clientBody)
+	if info != nil {
+		request, _ := info.Request.(*dto.ImageRequest)
+		clientBody = service.AddImageOutputWarnings(clientBody, request)
+	}
+	service.IOCopyBytesGracefully(c, resp, clientBody)
 
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)

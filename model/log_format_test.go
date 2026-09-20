@@ -8,6 +8,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestImageErrorLogsPreserveUpstreamMessage(t *testing.T) {
+	const original = "status_code=400, upstream safety checks"
+	entry := &Log{Type: LogTypeError, Content: original, Other: `{"request_path":"/pg/images/edits","error_code":"content_policy_violation","admin_info":{"use_channel":["1"]}}`}
+	formatUserLogs([]*Log{entry}, 0)
+	require.Equal(t, original, entry.Content)
+	require.NotContains(t, entry.Other, "admin_info")
+	require.NotContains(t, entry.Other, "original_error")
+}
+
 // TestFormatUserLogsStripsQuotaSaturation verifies the admin-only quota
 // saturation marker (nested under other.admin_info) is removed for non-admin
 // log views, since formatUserLogs strips the whole admin_info object.

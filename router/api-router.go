@@ -12,6 +12,7 @@ import (
 )
 
 func SetApiRouter(router *gin.Engine) {
+	router.GET("/api/image-upscale/worker-config", middleware.RootAuth(), middleware.DisableCache(), controller.DownloadImageUpscaleWorkerConfig)
 	apiRouter := router.Group("/api")
 	apiRouter.Use(middleware.RouteTag("api"))
 	apiRouter.Use(gzip.Gzip(gzip.DefaultCompression))
@@ -21,7 +22,7 @@ func SetApiRouter(router *gin.Engine) {
 	{
 		apiRouter.GET("/setup", controller.GetSetup)
 		apiRouter.POST("/setup", anonymousRequestBodyLimit, controller.PostSetup)
-		apiRouter.GET("/status", controller.GetStatus)
+		apiRouter.GET("/status", middleware.DisableCache(), controller.GetStatus)
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
@@ -151,6 +152,21 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
 		}
+
+		agentRoute := apiRouter.Group("/agent")
+		agentRoute.Use(middleware.UserAuth())
+		agentRoute.GET("/self", controller.AgentSelf)
+		agentRoute.GET("/invitations", controller.AgentInvitations)
+		agentRoute.POST("/invitations", middleware.UserCriticalRateLimit("agent-invitation"), controller.AgentInvitations)
+		agentRoute.PUT("/price", controller.AgentPrice)
+		agentRoute.GET("/customers", controller.AgentCustomers)
+		agentRoute.GET("/customers/:id/topups", controller.AgentCustomerTopUps)
+		agentRoute.GET("/customer-price", controller.CustomerAgentPrice)
+		agentAdminRoute := apiRouter.Group("/agents")
+		agentAdminRoute.Use(middleware.RootAuth())
+		agentAdminRoute.GET("/:id", controller.AdminAgentProfile)
+		agentAdminRoute.PUT("/:id", controller.AdminAgentProfile)
+		apiRouter.GET("/agent-invitations/:token", controller.PreviewAgentInvitation)
 
 		// Subscription billing (plans, purchase, admin management)
 		subscriptionRoute := apiRouter.Group("/subscription")

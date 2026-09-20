@@ -274,6 +274,16 @@ func migrateDB() error {
 		&TopUp{},
 		&QuotaData{},
 		&Task{},
+		&DrawingBatch{},
+		&APIImageTask{},
+		&ImageUpscaleJob{},
+		&AgentProfile{},
+		&AgentPriceChange{},
+		&AgentInvitation{},
+		&AgentCustomerPrice{},
+		&DrawingTemplate{},
+		&DrawingItem{},
+		&DrawingQueueLock{},
 		&Model{},
 		&Vendor{},
 		&PrefillGroup{},
@@ -294,6 +304,9 @@ func migrateDB() error {
 		&AuthzRole{},
 	)
 	if err != nil {
+		return err
+	}
+	if err := InitializeAgentCustomerPrices(); err != nil {
 		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
@@ -337,6 +350,16 @@ func migrateDBFast() error {
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
 		{&Task{}, "Task"},
+		{&DrawingBatch{}, "DrawingBatch"},
+		{&APIImageTask{}, "APIImageTask"},
+		{&ImageUpscaleJob{}, "ImageUpscaleJob"},
+		{&AgentProfile{}, "AgentProfile"},
+		{&AgentPriceChange{}, "AgentPriceChange"},
+		{&AgentInvitation{}, "AgentInvitation"},
+		{&AgentCustomerPrice{}, "AgentCustomerPrice"},
+		{&DrawingTemplate{}, "DrawingTemplate"},
+		{&DrawingItem{}, "DrawingItem"},
+		{&DrawingQueueLock{}, "DrawingQueueLock"},
 		{&Model{}, "Model"},
 		{&Vendor{}, "Vendor"},
 		{&PrefillGroup{}, "PrefillGroup"},
@@ -376,6 +399,9 @@ func migrateDBFast() error {
 		if err != nil {
 			return err
 		}
+	}
+	if err := InitializeAgentCustomerPrices(); err != nil {
+		return err
 	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
