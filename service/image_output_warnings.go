@@ -17,6 +17,21 @@ func AddImageOutputWarnings(body []byte, request *dto.ImageRequest) []byte {
 		return body
 	}
 	autoSettings := (request.Size == "" || request.Size == "auto") && (request.Quality == "" || request.Quality == "auto")
+	if autoSettings && (request.N == nil || *request.N == 0 || *request.N > dto.MaxImageN) {
+		return body
+	}
+	stripped, blobs := detachImageBase64(body)
+	if blobs == nil {
+		return addImageOutputWarnings(body, request)
+	}
+	if result, ok := blobs.attach(addImageOutputWarnings(stripped, request)); ok {
+		return result
+	}
+	return addImageOutputWarnings(body, request)
+}
+
+func addImageOutputWarnings(body []byte, request *dto.ImageRequest) []byte {
+	autoSettings := (request.Size == "" || request.Size == "auto") && (request.Quality == "" || request.Quality == "auto")
 	validCount := request.N != nil && *request.N > 0 && *request.N <= dto.MaxImageN
 	if autoSettings && !validCount {
 		return body

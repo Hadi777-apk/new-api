@@ -39,8 +39,11 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 
+	// Usage, errors and the image count never live inside b64_json; reading
+	// them from the stripped copy avoids rescanning multi-MB image strings.
+	metadataBody := service.ImageJSONWithoutBase64(responseBody)
 	var usageResp dto.SimpleResponse
-	err = common.Unmarshal(responseBody, &usageResp)
+	err = common.Unmarshal(metadataBody, &usageResp)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -49,7 +52,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
-	updateOpenAIImageCount(info, gjson.GetBytes(responseBody, "data.#").Int())
+	updateOpenAIImageCount(info, gjson.GetBytes(metadataBody, "data.#").Int())
 	clientBody := responseBody
 	if info != nil && service.LocalImageUpscaleTarget(info.OriginModelName, info.UpstreamModelName) != 0 {
 		target := service.LocalImageUpscaleTarget(info.OriginModelName, info.UpstreamModelName)
@@ -88,7 +91,7 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	service.IOCopyBytesGracefully(c, resp, clientBody)
 
 	normalizeOpenAIUsage(&usageResp.Usage)
-	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
+	applyUsagePostProcessing(info, &usageResp.Usage, metadataBody)
 	return &usageResp.Usage, nil
 }
 
@@ -275,15 +278,16 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 	// Only decode usage/error. Do not Unmarshal data[] into dto.ImageResponse —
 	// b64_json values are large and would be copied into Go strings then
 	// re-marshaled for each SSE event.
+	metadataBody := service.ImageJSONWithoutBase64(responseBody)
 	var usageResp dto.SimpleResponse
-	if err := common.Unmarshal(responseBody, &usageResp); err != nil {
+	if err := common.Unmarshal(metadataBody, &usageResp); err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 	normalizeOpenAIUsage(&usageResp.Usage)
-	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
+	applyUsagePostProcessing(info, &usageResp.Usage, metadataBody)
 
 	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
 	updateOpenAIImageCount(info, imageCount)

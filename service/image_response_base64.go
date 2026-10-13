@@ -72,10 +72,12 @@ func ValidateImageNativeBase64Response(ctx context.Context, body []byte) ([]byte
 }
 
 func ensureImageBase64Response(ctx context.Context, body []byte, preserveURLs bool) ([]byte, error) {
-	if !gjson.ValidBytes(body) {
+	// Check structure on the detached copy; read image strings from the original.
+	scan, blobs := detachImageBase64(body)
+	if !gjson.ValidBytes(scan) {
 		return nil, errors.New("invalid image response")
 	}
-	data := gjson.GetBytes(body, "data")
+	data := gjson.GetBytes(scan, "data")
 	if !data.IsArray() {
 		return nil, errors.New("upstream returned an invalid image list")
 	}
@@ -97,8 +99,15 @@ func ensureImageBase64Response(ctx context.Context, body []byte, preserveURLs bo
 			return nil, errors.New("upstream returned an invalid image item")
 		}
 		encoded := item.Get("b64_json")
-		if encoded.Type == gjson.String && encoded.Str != "" {
-			value, err := normalizeImageResponseBase64(encoded.Str)
+		original := encoded.Str
+		if encoded.Type == gjson.String && blobs != nil {
+			var ok bool
+			if original, ok = jsonStringValue(blobs.original(json.RawMessage(encoded.Raw))); !ok {
+				return nil, errors.New("invalid image response")
+			}
+		}
+		if encoded.Type == gjson.String && original != "" {
+			value, err := normalizeImageResponseBase64(original)
 			if err != nil {
 				return nil, fmt.Errorf("image %d: %w", index+1, err)
 			}
@@ -113,7 +122,7 @@ func ensureImageBase64Response(ctx context.Context, body []byte, preserveURLs bo
 			if err := validateImageResponseBytes(ctx, decoded); err != nil {
 				return nil, fmt.Errorf("image %d: %w", index+1, err)
 			}
-			if value != encoded.Str {
+			if value != original {
 				normalized[index] = value
 			}
 		} else if !preserveURLs {
