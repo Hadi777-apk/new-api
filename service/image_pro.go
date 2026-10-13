@@ -10,16 +10,17 @@ import (
 
 // The upstream Pro service uses resolution tiers, not a fixed longest edge.
 // In particular its 4K square preset is 2880x2880.
+// 4:5 and 5:4 extend the local request presets; upstream output needs live verification.
 var proImageSizes = map[string]map[string]string{
-	"gpt-image-2.5-2k": {"1:1": "2048x2048", "2:3": "1712x2560", "3:2": "2560x1712", "4:3": "2048x1536", "3:4": "1536x2048", "9:16": "1152x2048", "16:9": "2048x1152"},
-	"gpt-image-2.5-4k": {"1:1": "2880x2880", "2:3": "2560x3840", "3:2": "3840x2560", "3:4": "2880x3840", "4:3": "3840x2880", "9:16": "2160x3840", "16:9": "3840x2160"},
+	"gpt-image-2.5-2k": {"4:5": "2048x2560", "5:4": "2560x2048", "1:1": "2048x2048", "2:3": "1712x2560", "3:2": "2560x1712", "4:3": "2048x1536", "3:4": "1536x2048", "9:16": "1152x2048", "16:9": "2048x1152"},
+	"gpt-image-2.5-4k": {"4:5": "3072x3840", "5:4": "3840x3072", "1:1": "2880x2880", "2:3": "2560x3840", "3:2": "3840x2560", "3:4": "2880x3840", "4:3": "3840x2880", "9:16": "2160x3840", "16:9": "3840x2160"},
 }
 
 func ProImageSizeForRatio(modelName, ratio string) (string, error) {
 	if size := proImageSizes[modelName][ratio]; size != "" {
 		return size, nil
 	}
-	return "", errors.New("unsupported Pro image aspect ratio; use 1:1, 2:3, 3:2, 3:4, 4:3, 9:16 or 16:9")
+	return "", errors.New("unsupported Pro image aspect ratio; use 4:5, 5:4, 1:1, 2:3, 3:2, 3:4, 4:3, 9:16 or 16:9")
 }
 
 // Map an API client's aspect ratio to the tier selected by its model alias.

@@ -50,8 +50,10 @@ describe('AI drawing model filtering', () => {
     expect(getDefaultImageModel(models)).toBe('gpt-image-2')
   })
 
-  it('uses exact pixel ratios for all eight requested options', () => {
+  it('uses exact pixel ratios for all requested options', () => {
     expect(IMAGE_RATIO_OPTIONS.map((option) => option.ratio)).toEqual([
+      '4:5',
+      '5:4',
       '1:1',
       '3:4',
       '16:9',

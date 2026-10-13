@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const AgentImageModel = "gpt-image-2"
+const AgentImageModel = "gpt-image-2.5"
 const AgentMinimumPriceCents = 2
 const AgentMaximumPriceCents = 6
 

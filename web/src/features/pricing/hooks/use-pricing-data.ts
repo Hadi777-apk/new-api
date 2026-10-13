@@ -55,7 +55,7 @@ export function usePricingData() {
         : undefined
       return {
         ...model,
-        ...(model.model_name === 'gpt-image-2' &&
+        ...(model.model_name === customerPrice.data?.model &&
         customerPrice.data?.price_cents != null
           ? {
               agent_price_cents: customerPrice.data.price_cents,
@@ -64,7 +64,7 @@ export function usePricingData() {
               billing_expr: '',
             }
           : {}),
-        ...(model.model_name === 'gpt-image-2' && customerPrice.error
+        ...(model.model_name === 'gpt-image-2.5' && customerPrice.error
           ? { agent_price_unavailable: true }
           : {}),
         key: model.model_name,

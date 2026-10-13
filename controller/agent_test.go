@@ -132,11 +132,11 @@ func TestAgentBatchPriceLockAndAPISettlement(t *testing.T) {
 	}))
 	defer upstream.Close()
 	service.InitHttpClient()
-	channel := model.Channel{Type: 1, Key: "agent-fixture-only", Name: "agent-pricing-test", BaseURL: &upstream.URL, Models: "gpt-image-2", Group: "default", Status: 1}
+	channel := model.Channel{Type: 1, Key: "agent-fixture-only", Name: "agent-pricing-test", BaseURL: &upstream.URL, Models: "gpt-image-2.5", Group: "default", Status: 1}
 	require.NoError(t, channel.Insert())
 	count := 8
 	v1 := int64(1)
-	submission := drawingSubmission{SubmissionID: uuid.NewString(), Model: "gpt-image-2", Group: "default", Ratio: "3:4", Prompt: "Product", Count: &count, ExpectedAgentPriceVersion: &v1}
+	submission := drawingSubmission{SubmissionID: uuid.NewString(), Model: "gpt-image-2.5", Group: "default", Ratio: "3:4", Prompt: "Product", Count: &count, ExpectedAgentPriceVersion: &v1}
 	response := submitDrawingTestBatch(t, r, submission, nil, "second")
 	require.Equal(t, 202, response.Code, response.Body.String())
 	var batch model.DrawingBatch
@@ -160,7 +160,7 @@ func TestAgentBatchPriceLockAndAPISettlement(t *testing.T) {
 	user, err := model.GetUserById(81002, false)
 	require.NoError(t, err)
 	assert.Equal(t, 10_000_000-120_000, user.Quota, "8 images retain 0.03 CNY each despite group multiplier 4 and subsequent price 0.02")
-	response = submitDrawingTestBatch(t, r, drawingSubmission{SubmissionID: uuid.NewString(), Model: "gpt-image-2", Group: "default", Ratio: "3:4", Prompt: "Product", Count: &count, ExpectedAgentPriceVersion: &v1}, nil, "second")
+	response = submitDrawingTestBatch(t, r, drawingSubmission{SubmissionID: uuid.NewString(), Model: "gpt-image-2.5", Group: "default", Ratio: "3:4", Prompt: "Product", Count: &count, ExpectedAgentPriceVersion: &v1}, nil, "second")
 	assert.Equal(t, 409, response.Code)
 	assert.EqualValues(t, 8, calls.Load())
 	apiToken := model.Token{UserId: 81002, Name: "agent-client-key", Key: strings.Repeat("t", 48), Status: common.TokenStatusEnabled, RemainQuota: 1_000_000, ExpiredTime: -1, Group: "default"}
@@ -169,7 +169,7 @@ func TestAgentBatchPriceLockAndAPISettlement(t *testing.T) {
 	api.Use(middleware.BodyStorageCleanup())
 	api.POST("/v1/images/generations", middleware.TokenAuth(), middleware.Distribute(), func(c *gin.Context) { Relay(c, kittypes.RelayFormatOpenAIImage) })
 	send := func(prompt string, n int) *httptest.ResponseRecorder {
-		body := fmt.Sprintf(`{"model":"gpt-image-2","prompt":%q,"n":%d,"size":"1024x1024","price":0,"agent_id":9999}`, prompt, n)
+		body := fmt.Sprintf(`{"model":"gpt-image-2.5","prompt":%q,"n":%d,"size":"1024x1024","price":0,"agent_id":9999}`, prompt, n)
 		req := httptest.NewRequest("POST", "/v1/images/generations", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer sk-"+apiToken.Key)

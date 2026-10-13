@@ -11,6 +11,9 @@ func TestDrawingProResolution(t *testing.T) {
 		{"gpt-image-2.5-2k", "1:1", "2048x2048"}, {"gpt-image-2.5-2k", "2:3", "1712x2560"},
 		{"gpt-image-2.5-4k", "1:1", "2880x2880"}, {"gpt-image-2.5-4k", "16:9", "3840x2160"},
 		{"gpt-image-2.5", "21:9", "1792x768"},
+		{"gpt-image-2.5", "4:5", "1024x1280"}, {"gpt-image-2.5", "5:4", "1280x1024"},
+		{"gpt-image-2.5-2k", "4:5", "2048x2560"}, {"gpt-image-2.5-2k", "5:4", "2560x2048"},
+		{"gpt-image-2.5-4k", "4:5", "3072x3840"}, {"gpt-image-2.5-4k", "5:4", "3840x3072"},
 	} {
 		size, err := DrawingSize(tc.model, tc.ratio)
 		require.NoError(t, err)
@@ -21,6 +24,8 @@ func TestDrawingProResolution(t *testing.T) {
 }
 func TestProAliasAPISizeAndLocalGPUBypass(t *testing.T) {
 	for _, tc := range []struct{ model, size, want string }{
+		{"gpt-image-2.5-2k", "1024x1280", "2048x2560"}, {"gpt-image-2.5-2k", "1280x1024", "2560x2048"},
+		{"gpt-image-2.5-4k", "1024x1280", "3072x3840"}, {"gpt-image-2.5-4k", "1280x1024", "3840x3072"},
 		{"gpt-image-2.5-2k", "", "2048x2048"}, {"gpt-image-2.5-4k", "auto", "2880x2880"},
 		{"gpt-image-2.5-2k", "3840x2160", "2048x1152"}, {"gpt-image-2.5-4k", "1536x864", "3840x2160"},
 		{"gpt-image-2.5-4k", "1712x2560", "2560x3840"}, {"gpt-image-2.5-2k", "1024x1365", "1536x2048"},

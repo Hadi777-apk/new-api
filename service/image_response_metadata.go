@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -26,6 +24,17 @@ const imageMetadataHeaderLimit = 512 << 10
 // NormalizeImageJSONResponse supplements successful Images JSON without changing
 // image payloads, upstream extensions, or the usage used for billing.
 func NormalizeImageJSONResponse(ctx context.Context, body []byte) []byte {
+	stripped, blobs := detachImageBase64(body)
+	if blobs == nil {
+		return normalizeImageJSONResponse(ctx, body, nil)
+	}
+	if result, ok := blobs.attach(normalizeImageJSONResponse(ctx, stripped, blobs)); ok {
+		return result
+	}
+	return normalizeImageJSONResponse(ctx, body, nil)
+}
+
+func normalizeImageJSONResponse(ctx context.Context, body []byte, blobs *imageBase64Blobs) []byte {
 	var response map[string]json.RawMessage
 	if common.Unmarshal(body, &response) != nil || response == nil {
 		return body
@@ -45,7 +54,7 @@ func NormalizeImageJSONResponse(ctx context.Context, body []byte) []byte {
 	for i, item := range items {
 		width, height, format := 0, 0, ""
 		if i < dto.MaxImageN {
-			width, height, format = imageResponseMetadata(ctx, item)
+			width, height, format = imageResponseMetadata(ctx, item, blobs)
 		}
 		var sizeValue, widthValue, heightValue, formatValue any
 		size := ""
@@ -98,12 +107,10 @@ func NormalizeImageJSONResponse(ctx context.Context, body []byte) []byte {
 	return result
 }
 
-func imageResponseMetadata(ctx context.Context, item map[string]json.RawMessage) (int, int, string) {
-	var encoded, location string
-	_ = common.Unmarshal(item["b64_json"], &encoded)
+func imageResponseMetadata(ctx context.Context, item map[string]json.RawMessage, blobs *imageBase64Blobs) (int, int, string) {
+	var location string
 	_ = common.Unmarshal(item["url"], &location)
-	if encoded != "" {
-		reader := base64.NewDecoder(base64.StdEncoding, strings.NewReader(encoded))
+	if reader, ok := imageBase64Reader(blobs.original(item["b64_json"])); ok {
 		config, format, err := image.DecodeConfig(io.LimitReader(reader, MaxDrawingBytes))
 		if err == nil {
 			return config.Width, config.Height, format
@@ -165,7 +172,7 @@ func requestImageResponse(ctx context.Context, location string, headerOnly bool)
 	// Never forward the channel key, caller headers, or cookies to an image URL.
 	response, err := fetchClient.Do(request)
 	if err != nil {
-		return nil, errors.New("image download failed or timed out")
+		return nil, &imageDownloadError{message: "image download failed or timed out", cause: err}
 	}
 	return response, nil
 }

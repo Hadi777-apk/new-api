@@ -16,15 +16,41 @@ func AddImageOutputWarnings(body []byte, request *dto.ImageRequest) []byte {
 	if request == nil {
 		return body
 	}
-	if (request.Size == "" || request.Size == "auto") && (request.Quality == "" || request.Quality == "auto") {
+	autoSettings := (request.Size == "" || request.Size == "auto") && (request.Quality == "" || request.Quality == "auto")
+	if autoSettings && (request.N == nil || *request.N == 0 || *request.N > dto.MaxImageN) {
+		return body
+	}
+	stripped, blobs := detachImageBase64(body)
+	if blobs == nil {
+		return addImageOutputWarnings(body, request)
+	}
+	if result, ok := blobs.attach(addImageOutputWarnings(stripped, request)); ok {
+		return result
+	}
+	return addImageOutputWarnings(body, request)
+}
+
+func addImageOutputWarnings(body []byte, request *dto.ImageRequest) []byte {
+	autoSettings := (request.Size == "" || request.Size == "auto") && (request.Quality == "" || request.Quality == "auto")
+	validCount := request.N != nil && *request.N > 0 && *request.N <= dto.MaxImageN
+	if autoSettings && !validCount {
 		return body
 	}
 	var response map[string]json.RawMessage
 	var items []map[string]json.RawMessage
-	if common.Unmarshal(body, &response) != nil || common.Unmarshal(response["data"], &items) != nil {
+	if common.Unmarshal(body, &response) != nil || common.Unmarshal(response["data"], &items) != nil || items == nil {
+		return body
+	}
+	countMismatch := validCount && uint(len(items)) != *request.N
+	if autoSettings && !countMismatch {
 		return body
 	}
 	warnings := []map[string]any{}
+	if countMismatch {
+		response["requested_n"], _ = common.Marshal(*request.N)
+		response["returned_n"], _ = common.Marshal(len(items))
+		warnings = append(warnings, map[string]any{"code": "image_count_mismatch", "requested": *request.N, "actual": len(items)})
+	}
 	parts := strings.Split(request.Size, "x")
 	if len(parts) == 2 {
 		rw, e1 := strconv.Atoi(parts[0])
@@ -68,8 +94,17 @@ func AddImageOutputWarnings(body []byte, request *dto.ImageRequest) []byte {
 			}
 		}
 	}
+	allWarnings := []json.RawMessage{}
+	var existingWarnings []json.RawMessage
+	if common.Unmarshal(response["output_warnings"], &existingWarnings) == nil {
+		allWarnings = append(allWarnings, existingWarnings...)
+	}
+	for _, warning := range warnings {
+		encoded, _ := common.Marshal(warning)
+		allWarnings = append(allWarnings, encoded)
+	}
 	response["data"], _ = common.Marshal(items)
-	response["output_warnings"], _ = common.Marshal(warnings)
+	response["output_warnings"], _ = common.Marshal(allWarnings)
 	result, err := common.Marshal(response)
 	if err != nil {
 		return body

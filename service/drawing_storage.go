@@ -26,6 +26,7 @@ const MaxDrawingBytes = int64(32 << 20)
 const MaxDrawingResponseBytes = int64(48 << 20)
 
 var DrawingRatios = map[string]string{
+	"4:5": "1024x1280", "5:4": "1280x1024",
 	"1:1": "1024x1024", "3:4": "864x1152", "16:9": "1536x864", "4:3": "1152x864",
 	"9:16": "864x1536", "2:3": "1024x1536", "3:2": "1536x1024", "21:9": "1792x768",
 }

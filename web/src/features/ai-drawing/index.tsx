@@ -160,7 +160,7 @@ export function AiDrawing() {
           isSubmitting={mutation.isPending}
           maxCount={settingsQuery.data?.max_count}
           agentPriceCents={
-            model === 'gpt-image-2'
+            model === customerPrice.data?.model
               ? (customerPrice.data?.price_cents ?? undefined)
               : undefined
           }

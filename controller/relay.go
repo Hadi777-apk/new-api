@@ -190,8 +190,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	retryTimes := common.RetryTimes
+	if relayFormat == types.RelayFormatOpenAIImage {
+		group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		next, err := model.GetRandomSatisfiedChannel(group, relayInfo.OriginModelName, 1, c.Request.URL.Path)
+		if err == nil && next != nil && next.Id != c.GetInt("channel_id") {
+			retryTimes = max(retryTimes, 1)
+			c.Set("image_safe_fallback_only", true)
+		}
+	}
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	for ; retryParam.GetRetry() <= retryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -238,7 +247,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
-		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+		if !shouldRetry(c, newAPIError, retryTimes-retryParam.GetRetry()) {
 			break
 		}
 	}
@@ -318,6 +327,13 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 	if channel == nil {
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
+	if itemID := c.GetString("drawing_item_id"); itemID != "" && retryParam.GetRetry() > 0 && channel.Id != c.GetInt("channel_id") {
+		reserved, reserveErr := model.ReserveDrawingChannel(itemID, channel.Id)
+		if reserveErr != nil || !reserved {
+			c.Header("X-Drawing-Queue-Busy", "1")
+			return nil, types.NewErrorWithStatusCode(fmt.Errorf("fallback image channel is busy"), types.ErrorCodeGetChannelFailed, http.StatusTooManyRequests, types.ErrOptionWithSkipRetry())
+		}
+	}
 
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
 
@@ -329,8 +345,18 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
-	if c.GetBool("drawing_no_upstream_retry") {
-		return false
+	// Queued image jobs may fall back after an explicit upstream rejection.
+	// Transport failures and post-generation delivery failures remain ambiguous.
+	if c.GetBool("drawing_no_upstream_retry") || c.GetBool("image_safe_fallback_only") {
+		if !c.GetBool("image_upstream_rejected") || c.Writer.Written() {
+			return false
+		}
+		group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+		modelName := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
+		next, err := model.GetRandomSatisfiedChannel(group, modelName, len(c.GetStringSlice("use_channel")), c.Request.URL.Path)
+		if err != nil || next == nil || next.Id == c.GetInt("channel_id") {
+			return false
+		}
 	}
 	if openaiErr == nil {
 		return false

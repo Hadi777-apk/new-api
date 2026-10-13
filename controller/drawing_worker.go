@@ -65,6 +65,7 @@ func getDrawingRelay() *gin.Engine {
 				service.SetLockedAgentImageQuote(c, identity.Quote)
 			}
 			c.Set("drawing_no_upstream_retry", true)
+			c.Set("drawing_item_id", identity.ItemID)
 			c.Set(service.DrawingResponseSpoolContextKey, true)
 			c.Next()
 		})

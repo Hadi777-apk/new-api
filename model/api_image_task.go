@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -34,55 +35,91 @@ func GetAPIImageTask(user, token int, id string) (*APIImageTask, error) {
 	return &task, err
 }
 
+// The api_image_submission unique index makes idempotency atomic, so submits
+// do not take the shared drawing queue lock.
 func CreateAPIImageTask(task *APIImageTask) (*APIImageTask, error) {
-	err := drawingQueueTransaction(func(tx *gorm.DB) error {
-		var existing APIImageTask
-		err := tx.Where("user_id = ? AND token_id = ? AND submission_id = ?", task.UserID, task.TokenID, task.SubmissionID).First(&existing).Error
-		if err == nil {
-			if existing.RequestHash != task.RequestHash {
-				return errors.New("Idempotency key already used for another request")
-			}
-			*task = existing
-			return nil
+	existing, err := findAPIImageSubmission(task)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return task, err
+	}
+	if err := DB.Create(task).Error; err != nil {
+		// A concurrent submit with the same key may have won the unique index.
+		if existing, findErr := findAPIImageSubmission(task); findErr == nil {
+			return existing, nil
+		} else if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+			return task, findErr
 		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		return tx.Create(task).Error
-	})
-	return task, err
+		return task, err
+	}
+	return task, nil
+}
+
+func findAPIImageSubmission(task *APIImageTask) (*APIImageTask, error) {
+	var existing APIImageTask
+	err := DB.Where("user_id = ? AND token_id = ? AND submission_id = ?", task.UserID, task.TokenID, task.SubmissionID).First(&existing).Error
+	if err != nil {
+		return task, err
+	}
+	if existing.RequestHash != task.RequestHash {
+		return task, errors.New("Idempotency key already used for another request")
+	}
+	*task = existing
+	return task, nil
+}
+
+// ReapAPIImageTasks marks interrupted and expired tasks. Workers run it once per
+// tick rather than once per claim, since it scans every running task.
+func ReapAPIImageTasks(now int64) error {
+	// A process may have died AFTER upstream generation or billing. Never replay.
+	if err := DB.Model(&APIImageTask{}).Where("status = ? AND started_at < ?", "running", now-25*60).Updates(map[string]any{"status": "unknown", "error": "Worker interrupted; check usage before submitting another task"}).Error; err != nil {
+		return err
+	}
+	return DB.Model(&APIImageTask{}).Where("status = ? AND expires_at <= ?", "queued", now).Updates(map[string]any{"status": "expired"}).Error
 }
 
 func ClaimAPIImageTask(now int64) (*APIImageTask, error) {
-	var result *APIImageTask
-	err := drawingQueueTransaction(func(tx *gorm.DB) error {
-		// A process may have died AFTER upstream generation or billing. Never replay.
-		if err := tx.Model(&APIImageTask{}).Where("status = ? AND started_at < ?", "running", now-25*60).Updates(map[string]any{"status": "unknown", "error": "Worker interrupted; check usage before submitting another task"}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&APIImageTask{}).Where("status = ? AND expires_at <= ?", "queued", now).Updates(map[string]any{"status": "expired"}).Error; err != nil {
-			return err
-		}
-		var task APIImageTask
-		// Admission/dispatch adds no concurrency ceiling. Retain atomic claims
-		// so concurrent dispatchers cannot send the same paid request twice.
-		err := tx.Where("status = ? AND expires_at > ?", "queued", now).Order("created_at ASC, id ASC").First(&task).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		task.Status, task.StartedAt = "running", now
-		if err := tx.Save(&task).Error; err != nil {
-			return err
-		}
-		result = &task
-		return nil
-	})
-	return result, err
+	if err := ReapAPIImageTasks(now); err != nil {
+		return nil, err
+	}
+	return ClaimNextAPIImageTask(now)
 }
 
+// ClaimNextAPIImageTask moves the oldest queued task to running. Admission and
+// dispatch add no concurrency ceiling. The conditional update is the claim:
+// only one dispatcher can move a task out of "queued", so concurrent
+// dispatchers never send the same paid request twice, without a global lock.
+func ClaimNextAPIImageTask(now int64) (*APIImageTask, error) {
+	for attempt := 0; attempt < 8; attempt++ {
+		var task APIImageTask
+		err := DB.Where("status = ? AND expires_at > ?", "queued", now).Order("created_at ASC, id ASC").First(&task).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		result := DB.Model(&APIImageTask{}).Where("id = ? AND status = ? AND expires_at > ?", task.ID, "queued", now).Updates(map[string]any{"status": "running", "started_at": now})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 1 {
+			task.Status, task.StartedAt = "running", now
+			return &task, nil
+		}
+	}
+	// Another dispatcher kept winning; the next tick picks up what is left.
+	return nil, nil
+}
+
+// Saved results are ~3 MB each; clients fetch them right after polling sees
+// completion, so they are kept briefly. The row stays as an idempotency
+// tombstone until the 6-day purge.
+const APIImageResultLifetime = int64(10 * 60)
+
 func FinishAPIImageTask(task *APIImageTask) error {
-	return DB.Model(&APIImageTask{}).Where("id = ? AND status = ?", task.ID, "running").Updates(map[string]any{"status": task.Status, "http_status": task.HTTPStatus, "error": task.Error}).Error
+	task.ExpiresAt = time.Now().Unix() + APIImageResultLifetime
+	return DB.Model(&APIImageTask{}).Where("id = ? AND status = ?", task.ID, "running").Updates(map[string]any{"status": task.Status, "http_status": task.HTTPStatus, "error": task.Error, "expires_at": task.ExpiresAt}).Error
 }
