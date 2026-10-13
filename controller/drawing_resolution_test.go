@@ -98,8 +98,15 @@ func TestDrawingProAliasRelayAndFlatPrice(t *testing.T) {
 	require.NoError(t, form.Close())
 	result := runDrawingRelay(context.Background(), drawingIdentity{UserID: 81001, Group: "default"}, "/pg/images/edits", form.FormDataContentType(), &edit, &output, service.MaxDrawingResponseBytes)
 	require.Equal(t, 200, result.status, output.String())
-	assert.Equal(t, []string{"2048x1152", "2048x1152", "3840x2160", "3840x2160", "2048x2048", "2880x2880", "2560x3840"}, received)
+	for _, alias := range []string{"gpt-image-2.5-2k", "gpt-image-2.5-4k"} {
+		for _, size := range []string{"1024x1280", "1280x1024"} {
+			var response bytes.Buffer
+			result := runDrawingRelay(context.Background(), drawingIdentity{UserID: 81001, Group: "default"}, "/pg/images/generations", "application/json", strings.NewReader(`{"model":"`+alias+`","size":"`+size+`","prompt":"Product","n":1}`), &response, service.MaxDrawingResponseBytes)
+			require.Equal(t, 200, result.status, response.String())
+		}
+	}
+	assert.Equal(t, []string{"2048x1152", "2048x1152", "3840x2160", "3840x2160", "2048x2048", "2880x2880", "2560x3840", "2048x2560", "2560x2048", "3072x3840", "3840x3072"}, received)
 	user, err := model.GetUserById(81001, false)
 	require.NoError(t, err)
-	assert.Equal(t, 10_000_000-7*35000, user.Quota)
+	assert.Equal(t, 10_000_000-11*35000, user.Quota)
 }

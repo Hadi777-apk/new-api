@@ -21,6 +21,8 @@ import { z } from 'zod'
 import type { ModelOption } from '@/features/playground/types'
 
 export const IMAGE_RATIO_OPTIONS = [
+  { size: '1024x1280', ratio: '4:5', labelKey: 'Portrait' },
+  { size: '1280x1024', ratio: '5:4', labelKey: 'Landscape' },
   { size: '1024x1024', ratio: '1:1', labelKey: 'Square' },
   { size: '864x1152', ratio: '3:4', labelKey: 'Portrait' },
   { size: '1536x864', ratio: '16:9', labelKey: 'Landscape' },
@@ -43,6 +45,8 @@ const IMAGE_MODEL_HINTS = [
 export const drawingSchema = z.object({
   prompt: z.string().trim().min(1, 'Prompt is required'),
   size: z.enum([
+    '1024x1280',
+    '1280x1024',
     '1024x1024',
     '864x1152',
     '1536x864',

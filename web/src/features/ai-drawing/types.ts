@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export type ImageSize =
+  | '1024x1280'
+  | '1280x1024'
   | '1024x1024'
   | '864x1152'
   | '1536x864'
