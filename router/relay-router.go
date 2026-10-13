@@ -15,6 +15,9 @@ func SetRelayRouter(router *gin.Engine) {
 	router.Use(middleware.DecompressRequestMiddleware())
 	router.Use(middleware.BodyStorageCleanup()) // 清理请求体存储
 	router.Use(middleware.StatsMiddleware())
+	// These image-only URLs are bearer capabilities with a 24-hour lifetime.
+	router.GET("/v1/images/files/:name", controller.GetAPIImageFile)
+	router.HEAD("/v1/images/files/:name", controller.GetAPIImageFile)
 	upscaleWorker := router.Group("/internal/image-upscale", controller.ImageUpscaleWorkerAuth)
 	upscaleWorker.POST("/heartbeat", controller.ImageUpscaleWorkerHeartbeat)
 	upscaleWorker.POST("/claim", controller.ClaimImageUpscaleJob)

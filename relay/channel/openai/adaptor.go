@@ -441,6 +441,11 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	// The client-facing URL is hosted locally, independent of provider URL support.
+	localURL := strings.EqualFold(request.ResponseFormat, "url")
+	if localURL {
+		request.ResponseFormat = "b64_json"
+	}
 	switch info.RelayMode {
 	case relayconstant.RelayModeImagesEdits:
 		if isJSONRequest(c) {
@@ -476,6 +481,10 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		if mf != nil {
 			for key, values := range mf.Value {
 				if key == "model" {
+					continue
+				}
+				if localURL && key == "response_format" {
+					writer.WriteField(key, request.ResponseFormat)
 					continue
 				}
 				for _, value := range values {

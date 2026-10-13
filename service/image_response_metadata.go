@@ -165,7 +165,7 @@ func requestImageResponse(ctx context.Context, location string, headerOnly bool)
 	// Never forward the channel key, caller headers, or cookies to an image URL.
 	response, err := fetchClient.Do(request)
 	if err != nil {
-		return nil, errors.New("image download failed or timed out")
+		return nil, &imageDownloadError{message: "image download failed or timed out", cause: err}
 	}
 	return response, nil
 }

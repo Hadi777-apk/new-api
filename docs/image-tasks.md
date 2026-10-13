@@ -28,7 +28,7 @@ const data = await requestImageTask(
 return data;
 ```
 
-`data` 就是最终图片 JSON，仍用 `data.data[i].b64_json`，包含实测 size 和原 usage；不要再次 `.json()` 或 `.text()`。示例的 onTask 日志展示了需保存的字段，正式接入应保存到客户已有数据库/任务记录，不应仅依赖控制台日志。
+`data` 就是最终图片 JSON，默认使用 `data.data[i].b64_json`；请求 `response_format: "url"` 时改读 `data.data[i].url`，链接生成后有效 24 小时，`expires_at` 标记到期时间。两种格式均包含实测 size 和原 usage；不要再次 `.json()` 或 `.text()`。示例的 onTask 日志展示了需保存的字段，正式接入应保存到客户已有数据库/任务记录，不应仅依赖控制台日志。
 
 网络报错会携带 `error.submissionId` 和已取得的 `error.taskId`。已知道 taskId 时，以 `{taskId}` 再调用同一个函数只查询，不 POST。只有 submissionId 时，传同一编号和原请求参数，函数先查询已接收的任务，并核对请求哈希；任务确实不存在时才提交。不要因报错生成新的编号自动重试。轮询 GET 可自动恢复临时网络故障，付费生成 POST 不自动重放。
 
@@ -77,7 +77,7 @@ const body = {
 - `requested_size`：请求尺寸。
 - `data[i].size_matches_request`：是否精确匹配宽高；无法识别时为 null。
 - `data[i].aspect_ratio_matches_request`：比例是否接近请求，允许 0.5% 的像素舍入误差；无法识别时为 null。
-- `output_warnings`：可能包含 image_size_mismatch、image_aspect_ratio_mismatch 或 image_dimensions_unverified。
+- `output_warnings`：可能包含 image_size_mismatch、image_aspect_ratio_mismatch、image_dimensions_unverified 或 image_count_mismatch。数量不符时同时返回 requested_n、returned_n；每张图片的尺寸和格式取 data[i].size/output_format，多图顶层字段可能为 null。
 
 显式请求 quality 时增加 requested_quality 和 quality_report_matches_request；该匹配仅比较上游返回的质量声明，**不代表已经测量或证明画质**。上游未报告质量时为 null，不伪装成请求值；报告不同值时添加 image_quality_report_mismatch。
 
@@ -88,6 +88,10 @@ const body = {
 后台仍走既有 API Key 鉴权、分组/模型限制、渠道选择、生成和计费。API Key 在执行时再次检查，没有在任务文件中保存 Key。任务提交时锁定代理图片价格，排队期间改价不影响该任务。
 
 后台不继承提交 HTTP 请求的生命周期，客户端离线不取消已经排队的任务。队列在数据库中持久化，重启后未执行的任务可以继续；运行中断的任务不会自动重新生成，超过恢复窗口后标记 unknown，需核对用量。这个机制保证避免盲目重放，不声称在任意进程崩溃点都能实现上游和本地账本的分布式 exactly-once。
+
+API 图片任务不新增生图并发上限。数据库查询通过连接池复用连接，连接池繁忙时等待空闲连接；主/日志共用时默认最多 800 个连接，分离时两个池默认各 400，空闲保留 10，连接寿命 600 秒，可用现有 SQL_MAX_OPEN_CONNS、SQL_MAX_IDLE_CONNS、SQL_MAX_LIFETIME 环境变量显式覆盖。数据库连接数不等于同时生成的图片数。生产数据库上限需高于所有应用实例的连接池总预算；当前单实例配 PostgreSQL 1000 个连接，为其他查询预留余量。
+
+查询任务或结果时，真实 Key/任务不存在仍返回 401/404；数据库临时故障返回 503 database_unavailable、Retry-After: 2 和 x-should-retry: true。等待后重试同一 GET，不新建任务或重复提交生成请求。提交接口仍保留 x-should-retry: false。
 
 新增 SQL 表 `api_image_tasks`，请求与结果放在 `DRAWING_STORAGE_DIR/api-tasks` 私有目录，后台清理过期文件。回滚旧二进制不会自动删除新表或已存任务；有运行任务时不应直接回滚。
 

@@ -77,10 +77,10 @@ func TestAPIImageTaskDetachedIdempotentBillingAndAccess(t *testing.T) {
 	}))
 	defer upstream.Close()
 	service.InitHttpClient()
-	ch := model.Channel{Type: 1, Key: "fixture", Name: "async-test", BaseURL: &upstream.URL, Models: "gpt-image-2", Group: "default", Status: 1}
+	ch := model.Channel{Type: 1, Key: "fixture", Name: "async-test", BaseURL: &upstream.URL, Models: "gpt-image-2.5", Group: "default", Status: 1}
 	require.NoError(t, ch.Insert())
 	key := uuid.NewString()
-	body := `{"model":"gpt-image-2","prompt":"async test","n":1,"quality":"low","output_format":"jpeg","output_compression":100,"size":"960x1280"}`
+	body := `{"model":"gpt-image-2.5","prompt":"async test","n":1,"quality":"low","output_format":"jpeg","output_compression":100,"size":"960x1280"}`
 	response := apiTaskCall(t, r, token, "POST", "/v1/images/tasks", key, body)
 	require.Equal(t, 202, response.Code, response.Body.String())
 	var task model.APIImageTask
@@ -151,11 +151,11 @@ func TestAPIImageTaskDetachedIdempotentBillingAndAccess(t *testing.T) {
 
 func TestAPIImageTaskSubmissionKeepsTransportContract(t *testing.T) {
 	r, token, _ := setupAPIImageTasks(t)
-	bad := apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2","prompt":"test","stream":true}`)
+	bad := apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2.5","prompt":"test","stream":true}`)
 	assert.Equal(t, 400, bad.Code)
-	assert.Equal(t, 400, apiTaskCall(t, r, token, "POST", "/v1/images/tasks", "", `{"model":"gpt-image-2","prompt":"test"}`).Code)
-	assert.Equal(t, 202, apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2","prompt":"test","images":[{}]}`).Code)
-	assert.Equal(t, 202, apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2","prompt":"test","n":21}`).Code)
+	assert.Equal(t, 400, apiTaskCall(t, r, token, "POST", "/v1/images/tasks", "", `{"model":"gpt-image-2.5","prompt":"test"}`).Code)
+	assert.Equal(t, 202, apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2.5","prompt":"test","images":[{}]}`).Code)
+	assert.Equal(t, 202, apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2.5","prompt":"test","n":21}`).Code)
 }
 
 func TestAPIImageTaskReferencesUseJSONEditRoute(t *testing.T) {
@@ -183,9 +183,9 @@ func TestAPIImageTaskReferencesUseJSONEditRoute(t *testing.T) {
 	}))
 	defer upstream.Close()
 	service.InitHttpClient()
-	ch := model.Channel{Type: 1, Key: "fixture", Name: "edit-route-test", BaseURL: &upstream.URL, Models: "gpt-image-2", Group: "default", Status: 1}
+	ch := model.Channel{Type: 1, Key: "fixture", Name: "edit-route-test", BaseURL: &upstream.URL, Models: "gpt-image-2.5", Group: "default", Status: 1}
 	require.NoError(t, ch.Insert())
-	body, err := common.Marshal(map[string]any{"model": "gpt-image-2", "prompt": "reference test", "images": []string{reference}})
+	body, err := common.Marshal(map[string]any{"model": "gpt-image-2.5", "prompt": "reference test", "images": []string{reference}})
 	require.NoError(t, err)
 	response := apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), string(body))
 	require.Equal(t, 202, response.Code, response.Body.String())
@@ -202,7 +202,7 @@ func TestAPIImageTasksDoNotAddLocalConcurrencyOrPendingLimits(t *testing.T) {
 	// 21 jobs cross all former admission (10 jobs/20 images), per-user (2),
 	// and drawing-pool (4) limits. No upstream requests are executed here.
 	for i := 0; i < 21; i++ {
-		response := apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2","prompt":"queue admission test","n":1}`)
+		response := apiTaskCall(t, r, token, "POST", "/v1/images/tasks", uuid.NewString(), `{"model":"gpt-image-2.5","prompt":"queue admission test","n":1}`)
 		require.Equal(t, http.StatusAccepted, response.Code, response.Body.String())
 	}
 	claimedIDs := make(map[string]bool)

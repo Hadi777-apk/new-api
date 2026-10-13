@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -21,6 +22,7 @@ import (
 )
 
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
+	c.Set("image_upstream_rejected", false)
 	info.InitChannelMeta(c)
 
 	imageReq, ok := info.Request.(*dto.ImageRequest)
@@ -143,7 +145,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				// replicate channel returns 201 Created when using Prefer: wait, treat it as success.
 				httpResp.StatusCode = http.StatusOK
 			} else {
+				c.Set("image_upstream_rejected", true)
 				newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+				normalizeGrsaiImageCreditError(info.ChannelBaseUrl, newAPIError)
 				// reset status code 重置状态码
 				service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 				return newAPIError
@@ -196,6 +200,22 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), logContent)
 	return nil
+}
+
+// Grsai reports exhausted upstream credits as 400 rather than 402. Only this
+// provider rejection may be retried; ordinary invalid image requests stay 400.
+func normalizeGrsaiImageCreditError(baseURL string, apiErr *types.NewAPIError) {
+	if apiErr == nil || apiErr.StatusCode != http.StatusBadRequest || !strings.EqualFold(strings.TrimSpace(apiErr.Error()), "insufficient credits") {
+		return
+	}
+	upstream, err := url.Parse(baseURL)
+	if err != nil {
+		return
+	}
+	switch strings.ToLower(upstream.Hostname()) {
+	case "grsaiapi.com", "grsai.dakka.com.cn":
+		apiErr.StatusCode = http.StatusPaymentRequired
+	}
 }
 
 func prepareImageUpscaleRequest(c *gin.Context, request *dto.ImageRequest) error {

@@ -82,7 +82,7 @@ function AgentSettings(props: { profile: AgentProfile; onSaved: () => void }) {
       </div>
       <div className='grid gap-2'>
         <Label htmlFor='agent-admin-price'>
-          gpt-image-2 · {t('CNY per image')}
+          gpt-image-2.5 · {t('CNY per image')}
         </Label>
         <Input
           id='agent-admin-price'

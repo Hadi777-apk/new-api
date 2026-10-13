@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,6 +25,7 @@ import (
 	localtypes "github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 func apiImageTaskFile(id, suffix string) string {
@@ -32,6 +34,9 @@ func apiImageTaskFile(id, suffix string) string {
 
 func apiImageTaskError(c *gin.Context, status int, code, message string) {
 	c.Header("x-should-retry", "false")
+	if c.Request.Method == http.MethodGet && status == http.StatusServiceUnavailable && code == "database_unavailable" {
+		c.Header("x-should-retry", "true")
+	}
 	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message}})
 }
 
@@ -140,7 +145,12 @@ func GetAPIImageTask(c *gin.Context) {
 	}
 	token, err := model.GetTokenByIds(c.GetInt("token_id"), c.GetInt("id"))
 	if err != nil {
-		apiImageTaskError(c, 401, "invalid_token", "Invalid API key")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			apiImageTaskError(c, 401, "invalid_token", "Invalid API key")
+		} else {
+			c.Header("Retry-After", "2")
+			apiImageTaskError(c, 503, "database_unavailable", "Database is temporarily unavailable; retry this GET request without creating another task")
+		}
 		return
 	}
 	if ips := token.GetIpLimits(); len(ips) > 0 && !common.IsIpInCIDRList(net.ParseIP(c.ClientIP()), ips) {
@@ -155,7 +165,12 @@ func GetAPIImageTask(c *gin.Context) {
 		task, err = model.GetAPIImageTask(c.GetInt("id"), c.GetInt("token_id"), id.String())
 	}
 	if err != nil {
-		apiImageTaskError(c, 404, "task_not_found", "Image task not found")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			apiImageTaskError(c, 404, "task_not_found", "Image task not found")
+		} else {
+			c.Header("Retry-After", "2")
+			apiImageTaskError(c, 503, "database_unavailable", "Database is temporarily unavailable; retry this GET request without creating another task")
+		}
 		return
 	}
 	if task.ExpiresAt <= time.Now().Unix() {
@@ -303,6 +318,9 @@ func StartAPIImageWorker() {
 			now := time.Now().Unix()
 			if now-cleanupAt >= 60 {
 				cleanupAt = now
+				if err := service.CleanupImageURLFiles(now); err != nil {
+					common.SysError("temporary API image cleanup failed; will retry next minute")
+				}
 				var expired []model.APIImageTask
 				if model.DB.Where("expires_at <= ? AND status NOT IN ?", now, []string{"running", "queued", "expired"}).Limit(500).Find(&expired).Error == nil {
 					for _, task := range expired {

@@ -130,7 +130,7 @@ export function AgentInvitations(props: { profile: AgentProfile }) {
         </CardHeader>
         <CardContent className='grid gap-3'>
           <Label htmlFor='agent-image-price'>
-            gpt-image-2 · {t('CNY per image')}
+            gpt-image-2.5 · {t('CNY per image')}
           </Label>
           <div className='flex flex-wrap gap-2'>
             <Input

@@ -283,6 +283,9 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		}
 	}
 
+	if strings.EqualFold(imageRequest.ResponseFormat, "url") && imageRequest.Stream != nil && *imageRequest.Stream {
+		return nil, errors.New("response_format=url requires stream=false")
+	}
 	return imageRequest, nil
 }
 

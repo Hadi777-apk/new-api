@@ -1,7 +1,11 @@
 package openai
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -41,7 +45,10 @@ func TestOpenaiImageDoResponseUsesInfoIsStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Cleanup(func() { gin.SetMode(oldMode) })
 
-	body := `{"created":1710000000,"data":[{"b64_json":"image"}]}`
+	var imageBytes bytes.Buffer
+	require.NoError(t, png.Encode(&imageBytes, image.NewGray(image.Rect(0, 0, 2, 3))))
+	encoded := base64.StdEncoding.EncodeToString(imageBytes.Bytes())
+	body := `{"created":1710000000,"data":[{"b64_json":"` + encoded + `"}]}`
 
 	t.Run("non-stream response stays JSON", func(t *testing.T) {
 		c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
@@ -52,7 +59,7 @@ func TestOpenaiImageDoResponseUsesInfoIsStream(t *testing.T) {
 		require.Nil(t, err)
 		require.NotNil(t, usage)
 		require.Equal(t, "application/json", recorder.Header().Get("Content-Type"))
-		require.Equal(t, "image", gjson.Get(recorder.Body.String(), "data.0.b64_json").String())
+		require.Equal(t, encoded, gjson.Get(recorder.Body.String(), "data.0.b64_json").String())
 		require.EqualValues(t, 1710000000, gjson.Get(recorder.Body.String(), "created").Int())
 	})
 

@@ -59,12 +59,14 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			return nil, types.NewOpenAIError(err, types.ErrorCode("image_upscale_failed"), http.StatusFailedDependency, types.ErrOptionWithSkipRetry())
 		}
 	}
-	if !c.GetBool(service.DrawingResponseSpoolContextKey) {
+	if c.GetBool(service.DrawingResponseSpoolContextKey) {
+		clientBody, err = service.ValidateImageNativeBase64Response(c.Request.Context(), clientBody)
+	} else {
 		clientBody, err = service.EnsureImageBase64Response(c.Request.Context(), clientBody)
-		if err != nil {
-			c.Header("x-should-retry", "false")
-			return nil, types.NewOpenAIError(err, types.ErrorCode("image_delivery_failed"), http.StatusFailedDependency, types.ErrOptionWithSkipRetry())
-		}
+	}
+	if err != nil {
+		c.Header("x-should-retry", "false")
+		return nil, types.NewOpenAIError(err, types.ErrorCode("image_delivery_failed"), http.StatusFailedDependency, types.ErrOptionWithSkipRetry())
 	}
 
 	// 写入新的 response body
@@ -75,6 +77,13 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	if info != nil {
 		request, _ := info.Request.(*dto.ImageRequest)
 		clientBody = service.AddImageOutputWarnings(clientBody, request)
+		if request != nil && strings.EqualFold(request.ResponseFormat, "url") && !c.GetBool(service.DrawingResponseSpoolContextKey) {
+			clientBody, err = service.FormatImageURLResponse(c.Request.Context(), clientBody, service.DrawingOption("ServerAddress", "http://localhost:3000"))
+			if err != nil {
+				c.Header("x-should-retry", "false")
+				return nil, types.NewOpenAIError(err, types.ErrorCode("image_delivery_failed"), http.StatusFailedDependency, types.ErrOptionWithSkipRetry())
+			}
+		}
 	}
 	service.IOCopyBytesGracefully(c, resp, clientBody)
 
